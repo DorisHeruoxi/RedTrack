@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>薯迹</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.12.0/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.12.0/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+  <style>
+    :root {
+      --xhs-red: #ff2442;
+      --ink: #202124;
+      --muted: #8c8c8c;
+      --warm: #fff8dc;
+      --warm-line: #a96c14;
+      --phone-scale: 1;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #ececec; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; padding: 0; }
+    button, input { font: inherit; }
+    button { border: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
+    .phone {
+      position: relative;
+      width: 430px;
+      height: 932px;
+      flex: 0 0 auto;
+      margin: 0;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(0,0,0,.18);
+      zoom: var(--phone-scale);
+    }
+    .screen {
+      position: absolute; inset: 0; overflow: hidden; background: #fff;
+      transform: translateX(100%); opacity: 1; visibility: hidden; pointer-events: none;
+      transition: transform .3s ease-in-out, opacity .3s ease-in-out, visibility 0s linear .3s;
+    }
+    #screen-home { z-index: 1; transform: translateX(0); visibility: visible; pointer-events: auto; }
+    #screen-map { z-index: 10; }
+    #screen-poi { z-index: 20; }
+    .screen.active { transform: translateX(0); visibility: visible; pointer-events: auto; transition-delay: 0s; }
+    .full-shot { width: 100%; height: 100%; object-fit: contain; object-position: top center; display: block; }
+    .hotspot { position: absolute; z-index: 20; background: transparent; }
+    .status-bar { pointer-events: none; position: absolute; z-index: 800; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 8px 27px 0; color: #111; font-size: 15px; font-weight: 650; }
+    .back-icon { width: 13px; height: 13px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+    .round-button { display: grid; place-items: center; color: #666; background: transparent; }
+
+    #map { position: absolute; inset: 0; background: #edf1f3; }
+    .leaflet-container { font-family: inherit; background: transparent; }
+    .leaflet-tile-pane { filter: none; }
+    .fallback-tiles { filter: saturate(.78) brightness(1.04) contrast(1.12); }
+    .maplibregl-map, .maplibregl-canvas { outline: none; }
+    .leaflet-marker-pane { filter: none; }
+    .leaflet-control-attribution { display: none !important; }
+    .map-search {
+      position: absolute; z-index: 700; top: 48px; left: 12px; right: 12px; height: 48px;
+      display: flex; align-items: center; gap: 8px; padding: 0 10px;
+      border-radius: 15px; background: rgba(255,255,255,.97); box-shadow: 0 5px 18px rgba(0,0,0,.14);
+    }
+    .map-search-main { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; color: #777; background: transparent; text-align: left; font-size: 13px; }
+    .map-search-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .explore-pill { position: absolute; z-index: 650; bottom: max(18px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); padding: 12px 28px; white-space: nowrap; border-radius: 999px; background: #fff; color: #222; font-size: 14px; font-weight: 600; box-shadow: 0 7px 24px rgba(0,0,0,.17); }
+
+    .restaurant-marker-shell { border: 0 !important; background: transparent !important; }
+    .featured-marker {
+      position: relative; display: flex; align-items: center; width: max-content; min-height: 48px;
+      padding: 4px 10px 4px 5px; border: 1.2px solid #b98234; border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(64,46,24,.16); transform-origin: center bottom; transition: transform .2s ease;
+    }
+    .featured-placement { width: max-content; transition: transform .25s ease; }
+    .featured-marker::after { content: ""; position: absolute; bottom: -5px; left: 42%; width: 9px; height: 9px; border-right: 1.2px solid #b98234; border-bottom: 1.2px solid #b98234; background: #ffffff; transform: rotate(45deg); }
+    .featured-marker.is-active { transform: scale(1.06); box-shadow: 0 8px 20px rgba(255,120,0,.25); }
+    .food-emoji { display: grid; width: 36px; flex: 0 0 36px; place-items: center; font-size: 29px; }
+    .featured-copy { display: flex; min-width: 0; max-width: 140px; flex-direction: column; margin-left: 3px; line-height: 1.1; }
+    .featured-copy b { overflow: hidden; color: #171717; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .featured-copy small { overflow: hidden; margin-top: 4px; color: #777; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .featured-marker img { position: absolute; top: -6px; right: -5px; width: 28px; height: 28px; aspect-ratio: 1 / 1; border: 1.5px solid #9d681c; border-radius: 50%; object-fit: cover; object-position: center; }
+    .simple-marker { display: flex; align-items: center; gap: 5px; width: max-content; max-width: 150px; padding: 2px; border: 0; border-radius: 0; background: transparent; box-shadow: 0 1px 3px rgba(255,255,255,.9); color: #222; line-height: 1.05; transition: transform .2s ease; }
+    .simple-marker.is-active { transform: scale(1.1); }
+    .simple-marker > span { display: grid; width: 27px; height: 27px; flex: 0 0 27px; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #ff9418; box-shadow: 0 2px 6px rgba(255,148,24,.3); }
+    .simple-marker > span svg { width: 15px; height: 15px; stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .simple-marker div { display: flex; min-width: 0; flex-direction: column; }
+    .simple-marker b { overflow: hidden; color: #e86416; font-size: 11px; font-weight: 700; text-overflow: ellipsis; text-shadow: 0 1px 2px #fff, 0 0 3px #fff; white-space: nowrap; }
+    .simple-marker small { margin-top: 3px; color: #999; font-size: 9px; text-shadow: 0 1px 2px #fff, 0 0 3px #fff; }
+    .overview-marker { display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #ff9418; box-shadow: 0 2px 6px rgba(255,148,24,.3); }
+    .overview-marker svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .user-location { position: relative; width: 23px; height: 23px; border: 2px solid #ff2442; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(255,255,255,.96), 0 3px 8px rgba(255,36,66,.28); }
+    .user-avatar-crop { position: absolute; inset: 0; overflow: hidden; border-radius: 50%; background: #fff; }
+    .user-avatar-crop img { width: 100%; height: 100%; max-width: none; object-fit: cover; transform: scale(1.14); }
+    .location-heading { position: absolute; z-index: 2; top: -10px; left: 50%; width: 12px; height: 10px; transform: translateX(-50%); filter: drop-shadow(0 1px 1px rgba(255,36,66,.18)); }
+    .location-label { position: absolute; top: 6px; left: 28px; width: max-content; color: #a15f69; font-size: 9px; font-weight: 600; text-shadow: 0 1px 2px #fff, 0 0 4px #fff; }
+
+    .restaurant-card { position: absolute; z-index: 700; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); overflow: hidden; border-radius: 18px; background: #fff; box-shadow: 0 -8px 28px rgba(25,31,39,.13); color: #222; text-align: left; transition: transform .3s cubic-bezier(.2,.8,.2,1), opacity .3s ease; will-change: transform, opacity; }
+    .social-proof { display: flex; height: 48px; align-items: center; padding: 0 12px; border: 1px solid #d9a044; border-bottom: 0; background: #fff8dc; font-size: 12px; white-space: nowrap; }
+    .social-avatar { position: relative; z-index: 2; width: 32px; height: 32px; flex: 0 0 32px; overflow: hidden; border: 1px solid #fff; border-radius: 50%; object-fit: cover; }
+    .second-avatar { display: grid; width: 32px; height: 32px; flex: 0 0 32px; margin-left: -6px; margin-right: 8px; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #111; font-size: 17px; }
+    .social-proof .nick { color: #3c3c3c; font-weight: 550; }
+    .social-proof .light { color: #999; font-weight: 400; }
+    .card-main { display: flex; gap: 12px; padding: 16px 16px 12px; }
+    .card-thumb { display: grid; width: 88px; height: 88px; flex: 0 0 88px; place-items: center; overflow: hidden; border-radius: 12px; background: #f3eee6; font-size: 48px; }
+    .card-copy { min-width: 0; flex: 1; }
+    .card-copy h3 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 20px; font-weight: 750; }
+    .card-copy p { margin: 6px 0 0; overflow: hidden; color: #333; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 16px; }
+    .card-actions span { padding: 8px; border: 1px solid #ddd; border-radius: 999px; text-align: center; font-size: 15px; }
+
+    .search-panel { position: absolute; z-index: 900; inset: 0; display: none; flex-direction: column; padding-top: 44px; background: #fff; color: #222; }
+    .search-panel.open { display: flex; }
+    .agent-input { display: flex; height: 48px; align-items: center; margin: 12px 16px 0; padding: 0 12px; border-radius: 999px; background: #f5f5f5; box-shadow: 0 2px 7px rgba(0,0,0,.06); }
+    .agent-input input { min-width: 0; flex: 1; border: 0; outline: 0; padding: 0 6px; background: transparent; color: #222; font-size: 15px; }
+    .search-action { padding-left: 9px; background: transparent; color: #333; font-size: 14px; font-weight: 600; }
+    .clear-action { display: none; width: 20px; height: 20px; margin-right: 5px; border-radius: 50%; background: #bfbfbf; color: #fff; font-size: 12px; }
+    .search-section { padding: 24px 20px 0; }
+    .search-section h2 { margin: 0; font-size: 16px; font-weight: 650; }
+    .history-head { display: flex; align-items: center; justify-content: space-between; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .chip { padding: 6px 12px; border: 1px solid #ececec; border-radius: 999px; background: #fff; color: #222; font-size: 13px; }
+    .around-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 4px; margin-top: 16px; text-align: center; }
+    .around-grid button { display: flex; flex-direction: column; align-items: center; gap: 4px; background: transparent; color: #222; font-size: 13px; }
+    .around-grid strong { font-size: 30px; font-weight: 400; }
+    .suggest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .suggest-grid button { background: transparent; color: #222; text-align: left; font-size: 14px; line-height: 1.4; }
+    .no-result { display: none; margin-top: 20px; padding: 12px; border-radius: 12px; background: #f7f7f7; color: #777; text-align: center; font-size: 14px; }
+    .voice-area { margin-top: auto; padding-bottom: max(26px, env(safe-area-inset-bottom)); text-align: center; }
+    .voice-area p { margin: 0 0 12px; color: #999; font-size: 12px; }
+    .voice-button { display: grid; width: 96px; height: 56px; margin: auto; place-items: center; border-radius: 999px; background: #fff; box-shadow: 0 8px 40px rgba(0,0,0,.12); font-size: 21px; }
+
+    .generic-poi { position: relative; height: 100%; overflow-y: auto; background: #fff; color: #222; }
+    .generic-hero { position: relative; min-height: 418px; height: 46%; padding: 55px 16px 16px; color: #fff; background: linear-gradient(180deg, rgba(22,24,27,.18), rgba(31,28,25,.9)), radial-gradient(circle at 70% 18%, #a47450, #554338 44%, #252321 100%); }
+    .poi-global-back { position: absolute; z-index: 1000; top: 5.8%; left: 3%; display: grid; width: 12%; height: 5.4%; place-items: center; background: transparent; color: transparent; }
+    #screen-poi.generic-mode .poi-global-back { top: 50px; left: 16px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.28); color: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.16); }
+    #screen-poi:not(.generic-mode) .poi-global-back .back-icon { opacity: 0; }
+    .generic-emoji { display: grid; height: 128px; place-items: center; font-size: 76px; filter: drop-shadow(0 10px 20px rgba(0,0,0,.2)); }
+    .generic-hero h1 { margin: 10px 0 0; font-size: 21px; line-height: 1.25; font-weight: 750; }
+    .generic-hero p { margin: 7px 0 0; font-size: 13px; }
+    .generic-address { margin-top: 13px; padding: 11px 12px; border-radius: 10px; background: rgba(255,255,255,.1); font-size: 12px; }
+    .generic-gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-top: 13px; }
+    .generic-gallery span { display: grid; height: 62px; place-items: center; overflow: hidden; background: rgba(255,255,255,.13); font-size: 30px; }
+    .checkin-banner { margin-top: 12px; padding: 10px 12px; border-radius: 9px; background: rgba(255,255,255,.08); color: #fff; text-align: center; font-size: 12px; }
+    .poi-tabs { position: sticky; top: 0; z-index: 5; display: flex; height: 56px; align-items: center; gap: 32px; padding: 0 20px; border-bottom: 1px solid #eee; background: #fff; }
+    .poi-tabs b { padding: 17px 0 13px; border-bottom: 2px solid var(--xhs-red); }
+    .poi-body { padding: 20px; }
+    .poi-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .poi-tags span { padding: 8px 12px; border-radius: 6px; background: #f7f7f7; font-size: 12px; }
+    .poi-note { margin-top: 28px; padding-top: 20px; border-top: 1px solid #eee; }
+    .poi-note p { font-size: 14px; line-height: 1.9; }
+    .checkin { position: absolute; z-index: 30; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 12px 40px; border-radius: 999px; background: var(--xhs-red); color: #fff; font-weight: 650; box-shadow: 0 8px 22px rgba(255,36,66,.26); }
+
+    @supports not (zoom: 1) {
+      .phone { transform: scale(var(--phone-scale)); transform-origin: center; }
+    }
+    @media (min-width: 640px) {
+      .phone { border-radius: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="phone" id="phone">
+    <section class="screen active" id="screen-home" aria-label="博主主页">
+      <img class="full-shot" src="./第1屏-博主主页-薯迹入口-v3.png" alt="小君毛吃东西博主主页" />
+      <button class="hotspot" id="explore-button" aria-label="点击探索TA的薯迹" style="left:3.2%;top:48.35%;width:93.6%;height:3.85%;"></button>
+    </section>
+
+    <section class="screen" id="screen-map" aria-label="博主薯迹地图">
+      <div id="map"></div>
+      <div class="status-bar"><span>20:45</span><span>▮▮▮　◉　79▰</span></div>
+      <div class="map-search">
+        <button class="round-button" id="map-back" aria-label="返回主页" style="width:36px;height:36px;"><span class="back-icon"></span></button>
+        <button class="map-search-main" id="open-search" aria-label="打开AI搜索">
+          <span id="map-query-label">@点点：小君毛推荐的上海冒菜</span>
+        </button>
+      </div>
+      <button class="explore-pill" id="explore-area">探索此区域 👀</button>
+      <div id="card-host"></div>
+
+      <aside class="search-panel" id="search-panel" aria-label="搜索对话">
+        <div class="agent-input">
+          <button class="round-button" id="search-back" aria-label="返回地图" style="width:36px;height:36px;flex:0 0 36px;"><span class="back-icon"></span></button>
+          <input id="search-input" type="text" placeholder="小君毛推荐的上海冒菜" autocomplete="off" />
+          <button class="clear-action" id="clear-search" aria-label="清空">×</button>
+          <button class="search-action" id="submit-search">搜索</button>
+        </div>
+        <div class="search-section">
+          <div class="history-head"><h2>历史记录</h2><span style="color:#aaa">⌫</span></div>
+          <div class="chips">
+            <button class="chip">上海</button><button class="chip">美食</button><button class="chip">黄浦区四川中路213号</button>
+            <button class="chip">Eat't</button><button class="chip">makihouse</button><button class="chip">智嘉酒店</button><button class="chip">莫姐卷筒粉</button>
+          </div>
+        </div>
+        <div class="search-section">
+          <h2>探索周边</h2>
+          <div class="around-grid">
+            <button><strong>🍝</strong>餐厅</button><button><strong>🍢</strong>烧烤</button><button><strong>☕</strong>咖啡</button><button><strong>🍲</strong>火锅</button>
+            <button><strong>⛺</strong>露营</button><button><strong>🏕️</strong>景点</button><button><strong>🛍️</strong>购物</button><button><strong>🌳</strong>公园</button>
+          </div>
+        </div>
+        <div class="search-section">
+          <h2>猜你想搜</h2>
+          <div class="suggest-grid">
+            <button data-query="沪上不俗之面">沪上不俗之面</button>
+            <button data-query="离我最近的小君毛推荐餐厅">离我最近的小君毛推荐餐厅</button>
+            <button data-query="景德菜小君毛推荐">景德菜小君毛推荐</button>
+            <button data-query="小君毛年度最爱">小君毛年度最爱</button>
+          </div>
+          <p class="no-result" id="no-result">还没推荐过哦</p>
+        </div>
+        <div class="voice-area"><p>按住提问 有问必答 ✨</p><button class="voice-button">🎙️</button></div>
+      </aside>
+    </section>
+
+    <section class="screen" id="screen-poi" aria-label="店铺POI页">
+      <div id="poi-content" style="height:100%;"></div>
+      <button class="poi-global-back" id="poi-back" aria-label="返回地图"><span class="back-icon"></span></button>
+    </section>
+  </main>
+
+  <script>
+    const DEFAULT_CENTER = [31.2047, 121.4705];
+    const RESTAURANTS = [
+      { id:'songzhu', name:'菘竹香', price:51, district:'黄浦区', location:'世博会博物馆站', coords:[31.1966,121.4812], displayCoords:[31.1650,121.4450], tagline:'2025年度沪上不俗之面', category:'面馆', featured:true, emoji:'🍜', poi:'./第3屏-店铺POI主页-菘竹香.PNG' },
+      { id:'dingji', name:'鼎级冒菜', price:67, district:'静安区', location:'南京西路站', coords:[31.231,121.4578], displayCoords:[31.2450,121.4450], tagline:'值得专门去吃的冒菜', category:'川味小吃', featured:true, emoji:'🍲', poi:'./第3屏-店铺POI主页-鼎级冒菜.PNG' },
+      { id:'longyanxuan', name:'龙筵轩', price:349, district:'黄浦区', location:'打浦桥路站', coords:[31.2054,121.4684], displayCoords:[31.2660,121.5000], tagline:'离你最近的小君毛推荐餐厅', category:'本帮菜', emoji:'🥢' },
+      { id:'daban', name:'达班羊肉面', price:47, district:'奉贤区', location:'育秀路', coords:[30.9186,121.458], displayCoords:[31.2660,121.5250], tagline:'一碗热气腾腾的满足', category:'面馆', emoji:'🍜' },
+      { id:'xiaoniangniang', name:'小嬢嬢', price:142, district:'黄浦区', location:'思南公馆', coords:[31.2165,121.4698], displayCoords:[31.2400,121.5200], tagline:'藏在思南公馆的惊喜', category:'创意菜', emoji:'🍽️' },
+      { id:'jujie', name:'掬芥三文鱼料理', price:103, district:'静安区', location:'昌平路站', coords:[31.2379,121.441], displayCoords:[31.2250,121.4150], tagline:'三文鱼爱好者集合', category:'日本料理', emoji:'🍣' },
+      { id:'ouji', name:'欧记大排档', price:102, district:'长宁区', location:'延安西路站', coords:[31.2169,121.421], displayCoords:[31.2150,121.5020], tagline:'地道景德菜，好辣好过瘾', category:'江西菜', featured:true, emoji:'🥘', poi:'./第3屏-店铺POI主页-欧记大排档.PNG' },
+      { id:'turk', name:'图尔克泰姬印度土耳其餐厅', price:111, district:'长宁区', location:'武夷路', coords:[31.2138,121.423], displayCoords:[31.2250,121.4450], tagline:'异域香料的热烈碰撞', category:'中东菜', emoji:'🥙' },
+      { id:'yongle', name:'永乐海鲜面', price:48, district:'黄浦区', location:'一大会址站', coords:[31.217,121.475], displayCoords:[31.1990,121.4150], tagline:'鲜味很足的海鲜面', category:'面馆', emoji:'🍜' },
+      { id:'dacheng', name:'大成牛肉汤馆', price:71, district:'浦东新区', location:'蓝村路站', coords:[31.211,121.527], displayCoords:[31.1990,121.4450], tagline:'暖呼呼的一碗牛肉汤', category:'小吃快餐', emoji:'🥣' },
+      { id:'xiding', name:'喜鼎', price:247, district:'长宁区', location:'中山公园站', coords:[31.218,121.414], displayCoords:[31.1840,121.5100], tagline:'精致又舒服的一餐', category:'海鲜', emoji:'🦐' },
+      { id:'yejian', name:'嘢间', price:84, district:'静安区', location:'昌平路站', coords:[31.236,121.445], displayCoords:[31.1840,121.5300], tagline:'很有烟火气的小馆', category:'粤菜', emoji:'🥢' },
+      { id:'lemoncow', name:'柠檬与牛', price:67, district:'静安区', location:'自然博物馆站', coords:[31.2355,121.461], displayCoords:[31.1690,121.5100], tagline:'酸香开胃的宝藏小店', category:'东南亚菜', emoji:'🍋' },
+      { id:'dunhuang', name:'敦煌楼', price:77, district:'普陀区', location:'镇坪路站', coords:[31.246,121.429], displayCoords:[31.1690,121.5300], tagline:'西北风味量大实在', category:'西北菜', emoji:'🍖' },
+      { id:'yuncai', name:'云采云南菜', price:99, district:'普陀区', location:'镇坪路站', coords:[31.247,121.431], displayCoords:[31.1500,121.4200], tagline:'清新明亮的云南味道', category:'云南菜', emoji:'🌿' },
+      { id:'changan', name:'陕西大厦·长安宴', price:89, district:'静安区', location:'南京西路站', coords:[31.232,121.455], displayCoords:[31.1500,121.4900], tagline:'扎实地道的长安味', category:'陕西菜', emoji:'🥟' }
+    ];
+
+    const RULES = [
+      { id:'dingji', keys:['冒菜','上海冒菜','鼎级','年度最爱'] },
+      { id:'songzhu', keys:['沪上不俗之面','不俗之面','菘竹香','松竹香'] },
+      { id:'ouji', keys:['景德菜','欧记','大排档','江西菜'] },
+      { id:'longyanxuan', keys:['离我最近','最近的','附近','龙筵轩'] }
+    ];
+    const state = { screen:'home', selected:null, map:null, markers:new Map(), baseLayer:null, baseFallback:null, baseReady:false, baseTimer:null };
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    }
+
+    const BLOGGER_AVATAR = './小君毛吃东西-博主头像.PNG';
+    const USER_AVATAR = './截屏 2026-10-12 09.26.21.jpeg';
+
+    function showScreen(name) {
+      if (name === state.screen) return;
+      const order = { home:0, map:1, poi:2 };
+      const currentName = state.screen;
+      const current = $('#screen-' + currentName);
+      const next = $('#screen-' + name);
+      const forward = order[name] > order[currentName];
+      state.screen = name;
+      if (forward) next.classList.add('active');
+      else current.classList.remove('active');
+      if (name === 'map') {
+        initMap();
+        requestAnimationFrame(() => state.map && state.map.invalidateSize());
+      }
+    }
+
+    function createIcon(restaurant, active) {
+      const avatar = BLOGGER_AVATAR;
+      if (restaurant.featured) {
+        return L.divIcon({
+          className:'restaurant-marker-shell', iconSize:[190,58], iconAnchor:[95,53],
+          html:`<div class="featured-placement"><div class="featured-marker ${active ? 'is-active' : ''}"><span class="food-emoji">${restaurant.emoji}</span><span class="featured-copy"><b>${escapeHTML(restaurant.name)}</b><small>${escapeHTML(restaurant.tagline)}</small></span><img src="${avatar}" alt=""></div></div>`
+        });
+      }
+      return L.divIcon({
+        className:'restaurant-marker-shell', iconSize:[128,44], iconAnchor:[64,38],
+        html:`<div class="simple-marker ${active ? 'is-active' : ''}"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v7M8 3v7M11 3v7M8 10v11M5 7h6M17 3v18M17 3c3 2 3 7 0 9"/></svg></span><div><b>${escapeHTML(restaurant.name)}</b><small>¥${restaurant.price}/人</small></div></div>`
+      });
+    }
+
+    function createOverviewIcon() {
+      return L.divIcon({
+        className:'restaurant-marker-shell',
+        iconSize:[23,23],
+        iconAnchor:[11.5,11.5],
+        html:'<span class="overview-marker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v7M8 3v7M11 3v7M8 10v11M5 7h6M17 3v18M17 3c3 2 3 7 0 9"/></svg></span>'
+      });
+    }
+
+    function updateMarkerRendering() {
+      if (!state.map || !state.markers.size) return;
+      const zoom = state.map.getZoom();
+      const bounds = state.map.getBounds().pad(.18);
+      const expanded = new Set();
+      const occupied = [];
+      if (zoom < 13) {
+        state.markers.forEach((marker, id) => {
+          const restaurant = RESTAURANTS.find((item) => item.id === id);
+          marker.setIcon(restaurant.featured ? createIcon(restaurant, false) : createOverviewIcon());
+          marker.setZIndexOffset(restaurant.featured ? 650 : 0);
+        });
+        return;
+      }
+      const userPoint = state.map.latLngToContainerPoint(DEFAULT_CENTER);
+      if (bounds.contains(DEFAULT_CENTER)) occupied.push({ x:userPoint.x + 42, y:userPoint.y, width:112, height:34 });
+      const normalLimit = zoom < 13 ? 0 : zoom < 14 ? 4 : zoom < 15 ? 8 : Infinity;
+
+      RESTAURANTS.filter((restaurant) => restaurant.featured).forEach((restaurant) => {
+        expanded.add(restaurant.id);
+        if (!bounds.contains(restaurant.displayCoords)) return;
+        const point = state.map.latLngToContainerPoint(restaurant.displayCoords);
+        occupied.push({ x:point.x, y:point.y, width:190, height:64 });
+      });
+
+      if (state.selected && !state.selected.featured) {
+        expanded.add(state.selected.id);
+        if (bounds.contains(state.selected.displayCoords)) {
+          const point = state.map.latLngToContainerPoint(state.selected.displayCoords);
+          occupied.push({ x:point.x, y:point.y, width:132, height:48 });
+        }
+      }
+
+      let normalExpanded = 0;
+      RESTAURANTS
+        .filter((restaurant) => !restaurant.featured && restaurant.id !== state.selected?.id && bounds.contains(restaurant.displayCoords))
+        .forEach((restaurant) => {
+        if (normalExpanded >= normalLimit) return;
+        const point = state.map.latLngToContainerPoint(restaurant.displayCoords);
+        const footprint = { width:132, height:48 };
+        const overlaps = occupied.some((used) =>
+          Math.abs(point.x - used.x) < (footprint.width + used.width) / 2 + 10 &&
+          Math.abs(point.y - used.y) < (footprint.height + used.height) / 2 + 8
+        );
+        if (!overlaps) {
+          expanded.add(restaurant.id);
+          occupied.push({ x:point.x, y:point.y, width:footprint.width, height:footprint.height });
+          normalExpanded += 1;
+        }
+      });
+
+      state.markers.forEach((marker, id) => {
+        const restaurant = RESTAURANTS.find((item) => item.id === id);
+        const active = id === state.selected?.id;
+        marker.setIcon(expanded.has(id) ? createIcon(restaurant, active) : createOverviewIcon());
+        marker.setZIndexOffset(active ? 1200 : restaurant.featured ? 650 : expanded.has(id) ? 300 : 0);
+      });
+    }
+
+    function setPaintSafe(map, layerId, property, value) {
+      try { map.setPaintProperty(layerId, property, value); } catch (error) {}
+    }
+
+    function setLayoutSafe(map, layerId, property, value) {
+      try { map.setLayoutProperty(layerId, property, value); } catch (error) {}
+    }
+
+    function simplifyMapStyle(maplibreMap) {
+      const layers = (maplibreMap.getStyle() && maplibreMap.getStyle().layers) || [];
+      layers.forEach((layer) => {
+        const layerId = layer.id;
+        const signature = `${layerId} ${layer['source-layer'] || ''}`.toLowerCase();
+
+        if (layer.type === 'background') {
+          setPaintSafe(maplibreMap, layerId, 'background-color', '#f7f7f4');
+          return;
+        }
+
+        if (layer.type === 'fill') {
+          if (/water|ocean|river|lake/.test(signature)) {
+            setPaintSafe(maplibreMap, layerId, 'fill-color', '#cfe7f5');
+            setPaintSafe(maplibreMap, layerId, 'fill-opacity', 1);
+          } else if (/park|grass|wood|forest|green|landcover|nature|garden/.test(signature)) {
+            setPaintSafe(maplibreMap, layerId, 'fill-color', '#dff1d2');
+            setPaintSafe(maplibreMap, layerId, 'fill-opacity', .82);
+          } else if (/building/.test(signature)) {
+            setPaintSafe(maplibreMap, layerId, 'fill-color', '#e9eae7');
+            setPaintSafe(maplibreMap, layerId, 'fill-opacity', .34);
+            setPaintSafe(maplibreMap, layerId, 'fill-outline-color', '#e1e3df');
+          } else if (/landuse|residential|industrial|commercial/.test(signature)) {
+            setPaintSafe(maplibreMap, layerId, 'fill-color', '#f4f5f1');
+            setPaintSafe(maplibreMap, layerId, 'fill-opacity', .72);
+          }
+          return;
+        }
+
+        if (layer.type === 'fill-extrusion') {
+          setLayoutSafe(maplibreMap, layerId, 'visibility', 'none');
+          return;
+        }
+
+        if (layer.type === 'line') {
+          if (/rail|subway|transit|aeroway|airport/.test(signature)) {
+            setLayoutSafe(maplibreMap, layerId, 'visibility', 'none');
+          } else if (/water|river|stream|canal/.test(signature)) {
+            setPaintSafe(maplibreMap, layerId, 'line-color', '#badbea');
+            setPaintSafe(maplibreMap, layerId, 'line-opacity', .8);
+          } else if (/road|street|transportation|highway|motorway|trunk|primary|secondary|tertiary|minor|path/.test(signature)) {
+            const isCasing = /casing|outline|border/.test(signature);
+            const isMajor = /motorway|trunk|primary|secondary/.test(signature);
+            setPaintSafe(maplibreMap, layerId, 'line-color', isCasing ? '#d9dde2' : (isMajor ? '#fffdf8' : '#ffffff'));
+            setPaintSafe(maplibreMap, layerId, 'line-opacity', isCasing ? .78 : .96);
+          }
+          return;
+        }
+
+        if (layer.type === 'symbol') {
+          const localName = ['coalesce', ['get', 'name:nonlatin'], ['get', 'name'], ['get', 'name:latin']];
+          if (/poi_r1|poi_r7/.test(layerId)) {
+            maplibreMap.setFilter(layerId, ['any',
+              ['in', ['get', 'class'], ['literal', ['park', 'attraction']]],
+              ['in', ['get', 'subclass'], ['literal', ['park', 'garden', 'nature_reserve', 'museum', 'university']]]
+            ]);
+            setPaintSafe(maplibreMap, layerId, 'icon-opacity', 0);
+            setLayoutSafe(maplibreMap, layerId, 'text-field', localName);
+            setPaintSafe(maplibreMap, layerId, 'text-color', '#6e7471');
+            setPaintSafe(maplibreMap, layerId, 'text-halo-color', 'rgba(255,255,255,.96)');
+            setPaintSafe(maplibreMap, layerId, 'text-halo-width', 1.4);
+            return;
+          }
+          if (/poi_r20|poi_transit|label_village|label_town|one_way|one-way|shield|highway-name-path/.test(layerId)) {
+            setLayoutSafe(maplibreMap, layerId, 'visibility', 'none');
+            return;
+          }
+          if (layerId === 'label_other') {
+            maplibreMap.setFilter(layerId, ['==', ['get', 'class'], 'suburb']);
+          }
+          const isNoise = /poi|housenumber|house-number|transit|subway|metro|station|bus|rail|airport|aeroway|shop|amenity|building/.test(signature);
+          const isUseful = /place|settlement|city|town|village|state|province|district|road|street|highway|transportation-name|water.*name|waterway|park|nature|landuse.*label/.test(signature);
+          if (isNoise || !isUseful) {
+            setLayoutSafe(maplibreMap, layerId, 'visibility', 'none');
+            return;
+          }
+          setPaintSafe(maplibreMap, layerId, 'icon-opacity', 0);
+          setLayoutSafe(maplibreMap, layerId, 'text-field', localName);
+          setLayoutSafe(maplibreMap, layerId, 'text-font', ['Noto Sans Regular']);
+          setPaintSafe(maplibreMap, layerId, 'text-color', /place|settlement|city|district/.test(signature) ? '#555b60' : '#73787d');
+          setPaintSafe(maplibreMap, layerId, 'text-halo-color', 'rgba(255,255,255,.96)');
+          setPaintSafe(maplibreMap, layerId, 'text-halo-width', 1.4);
+          setPaintSafe(maplibreMap, layerId, 'text-opacity', .9);
+        }
+      });
+    }
+
+    function addFallbackBasemap() {
+      if (!state.map || state.baseReady || state.baseFallback) return;
+      if (state.baseLayer && state.map.hasLayer(state.baseLayer)) state.map.removeLayer(state.baseLayer);
+      state.baseFallback = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        className: 'fallback-tiles'
+      }).addTo(state.map);
+    }
+
+    function addVectorBasemap() {
+      if (typeof L.maplibreGL !== 'function' || typeof window.maplibregl === 'undefined') {
+        addFallbackBasemap();
+        return;
+      }
+      state.baseLayer = L.maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        interactive: false,
+        attributionControl: false
+      }).addTo(state.map);
+      const maplibreMap = state.baseLayer.getMaplibreMap();
+      const markReady = () => {
+        if (state.baseReady) return;
+        simplifyMapStyle(maplibreMap);
+        state.baseReady = true;
+        clearTimeout(state.baseTimer);
+      };
+      state.baseTimer = setTimeout(addFallbackBasemap, 8000);
+      maplibreMap.on('style.load', markReady);
+      maplibreMap.on('load', markReady);
+      if (maplibreMap.isStyleLoaded()) markReady();
+    }
+
+    function initMap() {
+      if (state.map || typeof L === 'undefined') return;
+      state.map = L.map('map', { center:DEFAULT_CENTER, zoom:12, zoomControl:false, attributionControl:false, minZoom:10, maxZoom:18 });
+      addVectorBasemap();
+      const locationIcon = L.divIcon({
+        className:'restaurant-marker-shell',
+        iconSize:[175,44],
+        iconAnchor:[12,12],
+        html:'<div class="user-location"><svg class="location-heading" viewBox="0 0 28 22" aria-hidden="true"><path d="M14 1.5c1.35 0 2.55.65 3.35 1.75l9.1 12.4c1.45 1.98.04 4.78-2.4 4.78H3.95c-2.44 0-3.85-2.8-2.4-4.78l9.1-12.4A4.15 4.15 0 0 1 14 1.5Z" fill="#ff2442"/></svg><span class="user-avatar-crop"><img src="' + USER_AVATAR + '" alt="当前用户头像"></span></div><div class="location-label">LUONE凯德晶萃广场</div>'
+      });
+      L.marker(DEFAULT_CENTER, { icon:locationIcon, zIndexOffset:1500 }).addTo(state.map);
+      RESTAURANTS.forEach((restaurant) => {
+        const marker = L.marker(restaurant.displayCoords, { icon:createOverviewIcon(), zIndexOffset:0 }).addTo(state.map);
+        marker.on('click', () => selectRestaurant(restaurant));
+        state.markers.set(restaurant.id, marker);
+      });
+      state.map.on('zoomend moveend', updateMarkerRendering);
+      updateMarkerRendering();
+    }
+
+    function matchRestaurant(query) {
+      const normalized = String(query || '').replace(/[\s，。！？、]/g,'').toLowerCase();
+      const rule = RULES.find((item) => item.keys.some((key) => normalized.includes(key.toLowerCase())));
+      if (rule) return RESTAURANTS.find((item) => item.id === rule.id);
+      return RESTAURANTS.find((item) => normalized.includes(item.name.toLowerCase())) || null;
+    }
+
+    function selectRestaurant(restaurant) {
+      state.selected = restaurant;
+      updateMarkerRendering();
+      $('#map-query-label').textContent = '@点点：' + restaurant.tagline;
+      $('#explore-area').style.display = 'none';
+      state.map.flyTo(restaurant.displayCoords, 15, { animate:true, duration:1.35 });
+      renderCard(restaurant);
+    }
+
+    function renderCard(restaurant) {
+      $('#card-host').innerHTML = `
+        <button class="restaurant-card" id="restaurant-card" aria-label="打开${escapeHTML(restaurant.name)}店铺页" style="transform:translateY(100%);opacity:0;">
+          <div class="social-proof">
+            <img class="social-avatar" src="${BLOGGER_AVATAR}" alt="小君毛">
+            <span class="second-avatar">🤓</span>
+            <span><span class="nick">小君毛吃东西</span><span class="light"> 和 </span><span class="nick">大表哥995</span><span class="light"> 等你关注的3人来过</span></span>
+          </div>
+          <div class="card-main">
+            <div class="card-thumb">${restaurant.emoji}</div>
+            <div class="card-copy"><h3>${escapeHTML(restaurant.name)}</h3><p>${escapeHTML(restaurant.category)}　${escapeHTML(restaurant.location)}　¥${restaurant.price}/人</p><p>“${escapeHTML(restaurant.tagline)}”</p></div>
+          </div>
+          <div class="card-actions"><span>☆ 收藏</span><span>△ 查看路线</span></div>
+        </button>`;
+      const card = $('#restaurant-card');
+      card.addEventListener('click', () => openPOI(restaurant));
+      requestAnimationFrame(() => {
+        card.style.transform = 'translateY(0)';
+        card.style.opacity = '1';
+      });
+    }
+
+    function openSearch() {
+      $('#search-panel').classList.add('open');
+      $('#no-result').style.display = 'none';
+      setTimeout(() => $('#search-input').focus(), 100);
+    }
+    function closeSearch() { $('#search-panel').classList.remove('open'); }
+    function runSearch(query) {
+      const result = matchRestaurant(query);
+      $('#search-input').value = query;
+      $('#clear-search').style.display = query ? 'block' : 'none';
+      if (!result) {
+        $('#no-result').style.display = 'block';
+        return;
+      }
+      $('#no-result').style.display = 'none';
+      closeSearch();
+      setTimeout(() => selectRestaurant(result), 80);
+    }
+
+    function openPOI(restaurant) {
+      const host = $('#poi-content');
+      $('#screen-poi').classList.toggle('generic-mode', !restaurant.poi);
+      if (restaurant.poi) {
+        host.innerHTML = `<img class="full-shot" src="${restaurant.poi}" alt="${escapeHTML(restaurant.name)}店铺POI主页">`;
+      } else {
+        host.innerHTML = `
+          <div class="generic-poi">
+            <div class="generic-hero">
+              <div class="generic-emoji">${restaurant.emoji}</div>
+              <h1>${escapeHTML(restaurant.name)}</h1>
+              <p style="color:#ff3151;font-weight:700;letter-spacing:1px">★★★★★ <span style="color:#fff;letter-spacing:0;font-weight:500">4.8　12人评价 ›</span></p>
+              <p>${escapeHTML(restaurant.category)}　${escapeHTML(restaurant.location)}　¥${restaurant.price}/人</p>
+              <p style="color:rgba(255,255,255,.8)">休息中　11:00-21:00　　地铁直达</p>
+              <div class="generic-address">📍 ${escapeHTML(restaurant.district)}${escapeHTML(restaurant.location)}附近　　导航　电话</div>
+              <div class="generic-gallery"><span>${restaurant.emoji}</span><span>🥢</span><span>🍽️</span><span>📍</span></div>
+              <div class="checkin-banner">📍 落地签共建计划 · 现场打卡收集城市印章</div>
+            </div>
+            <div class="poi-tabs"><b>打卡</b><span style="color:#888">笔记</span></div>
+            <div class="poi-body"><strong>打卡（36人）</strong><div class="poi-tags"><span>食材新鲜</span><span>值得专门去吃</span><span>环境舒服</span><span>味道惊喜</span></div><article class="poi-note"><b>小君毛吃东西</b><p>${escapeHTML(restaurant.tagline)}。这家真的很适合专门来吃一次，味道和氛围都在线。</p></article></div>
+            <button class="checkin">▣ 打卡发笔记</button>
+          </div>`;
+      }
+      showScreen('poi');
+    }
+
+    $('#explore-button').addEventListener('click', () => showScreen('map'));
+    $('#map-back').addEventListener('click', () => showScreen('home'));
+    $('#poi-back').addEventListener('click', () => showScreen('map'));
+    $('#open-search').addEventListener('click', openSearch);
+    $('#explore-area').addEventListener('click', openSearch);
+    $('#search-back').addEventListener('click', closeSearch);
+    $('#submit-search').addEventListener('click', () => runSearch($('#search-input').value));
+    $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') runSearch(event.target.value); });
+    $('#search-input').addEventListener('input', (event) => { $('#clear-search').style.display = event.target.value ? 'block' : 'none'; $('#no-result').style.display = 'none'; });
+    $('#clear-search').addEventListener('click', () => { $('#search-input').value = ''; $('#clear-search').style.display = 'none'; $('#no-result').style.display = 'none'; $('#search-input').focus(); });
+    $$('.suggest-grid [data-query]').forEach((button) => button.addEventListener('click', () => runSearch(button.dataset.query)));
+
+    function fitPhoneToViewport() {
+      const viewport = window.visualViewport;
+      const availableWidth = viewport ? viewport.width : window.innerWidth;
+      const availableHeight = viewport ? viewport.height : window.innerHeight;
+      const scale = Math.min(availableWidth / 430, availableHeight / 932, 1);
+      document.documentElement.style.setProperty('--phone-scale', String(scale));
+      requestAnimationFrame(() => state.map && state.map.invalidateSize());
+    }
+
+    fitPhoneToViewport();
+    window.addEventListener('resize', fitPhoneToViewport);
+    window.addEventListener('orientationchange', fitPhoneToViewport);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitPhoneToViewport);
+  </script>
+</body>
+</html>
